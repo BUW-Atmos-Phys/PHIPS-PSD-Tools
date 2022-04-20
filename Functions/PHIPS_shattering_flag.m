@@ -14,6 +14,7 @@ if ~isempty(listings)
     %[time_2DS_wei, SD_2DS_wei_max, SD_2DS_wei_area, bin_endpoints_2DS_wei, dlogDp_2DS] = Read_2DS_wei(SD_2DS_path,Aircraft_data_filename);
     [time_2DS_wei, SD_2DS_wei_max, SD_2DS_wei_area_liq, SD_2DS_wei_area_ice, SD_2DS_wei_area, ...
     bin_endpoints_2DS_wei, bin_midpoints_2DS_wei, dlogDp, TWC_2DS_wei] = Read_2DS_wei(SD_wei_path,Aircraft_data_filename);
+%     [time_2DS_wei, SD_2DS_wei_max, SD_2DS_wei_area, bin_endpoints_2DS_wei, dlogDp] = Read_2DS_wei(SD_wei_path,Aircraft_data_filename);
     exist_2DS_Wei = true; 
 else
     disp('No 2DS data available')

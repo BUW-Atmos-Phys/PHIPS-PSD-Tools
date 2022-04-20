@@ -1,5 +1,7 @@
 %% Revision history
 % 17.05.2021, FW, adjust for updated PO structure and added ASF from lvl 0
+% 08.12.2021, FW, sens volume is calculated for each particle (not just once per bin)
+% 07.02.2022, FW, adjusted paths and improved documentation
 
 function [SDice,SDdroplet] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path,campaign,flight,tstep,save_status,start_time,end_time)
 % PHIPS size distribution from scattering data
@@ -14,9 +16,9 @@ function [SDice,SDdroplet] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path
 % bin_endpoints = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
 bin_endpoints = [30,60,100,150,200,250,300,350,400,500,600,700];
 
-%savepath = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'SD'];
+savepath = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'SD', filesep];
 % folder = 'C:\Users\Fritz\Desktop\PHIPS SD test sens area\';
-% savepath = [folder, filesep, num2str(bin_endpoints(1)), '_new2', filesep, flight, filesep];
+% savepath = [folder, filesep, num2str(bin_endpoints(1)), '_new2_1s', filesep, flight, filesep];
 if ~isdir(savepath)
     mkdir(savepath)
 end
@@ -219,13 +221,25 @@ if exist('a_droplet')
         SDdroplet_counts = [0 0 0 bin_midpoints;...
             taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag.*0+1 sum(particles_per_bin_drop,2) particles_per_bin_drop]; % SF for droplet is always 1
         
-        %% Make SD files
+        % % estimate uncertainty 
+        % ice
+        dN_minus =  [ -24.9479  -24.0072  -18.7372  -17.7478  -14.5033  -11.3761   -7.8475   -8.1237   -5.9329   -5.2310   -3.8175];
+        dN_plus =   [45.5047   44.6152   51.4139   48.3331   32.1553   23.5189   23.0540   17.5292   12.1717    6.3060    7.0891];
+        dN_ice = (dN_plus - dN_minus)./2; % [%]
+        % droplets
+        dN_minus = [ -39.8952   -9.7177  -10.0118  -10.9244   -9.2650  -13.1825  -11.8750   -3.4833   -8.8068       NaN       NaN];
+        dN_plus =   [42.5975   12.1592   12.7038   17.2285   14.0938   22.1102   35.3615   15.7782    9.8641       NaN       NaN];
+        dN_drop = (dN_plus - dN_minus)./2;
+        dN_drop(end-1:end) = dN_drop(end-2); % set the last 2 bins, which dont have enough data, on the last valid point
         
+        % % Make SD files
         % Total concentration
         Ntot_ice = 1000.*nansum(conc_ice,2); % [L^-1]
-        Ntot_droplet = 1000.*nansum(conc_drop,2);
-        Ntot_err_droplet = Ntot_ice.* NaN; % Ntot_droplet.*nanmean(nanmean(V_err_droplet./V_droplet));
-        Ntot_err_ice = Ntot_ice.* NaN; % Ntot_ice.*nanmean(nanmean(V_err_ice./V_ice)); % THIS NEEDS TO BE CHANGED
+        Ntot_droplet =   1000.*nansum(conc_drop,2);
+        
+        Ntot_err_ice = 1000.*nansum(conc_ice.*dN_ice./100,2); % [L^-1]   
+        Ntot_err_droplet = 1000.*nansum(conc_drop.*dN_drop./100,2);
+        
         
         % dNdlogDp
         dNdlogDp_ice = zeros(size(conc_ice));
@@ -269,7 +283,9 @@ if exist('a_droplet')
         save_SD(SDice, SDice_counts, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
         save_SD(SDdroplet, SDdroplet_counts, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
         
-        translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
+        
+        % save SD as .nc file
+%        translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
         
     end % end of "if exists level file"
 end % end of "if exists a_droplet"
@@ -351,4 +367,345 @@ end % end loop time
 
 end % end function
 
+%% get the raw ASF from the lvl 0 file
+function PhipsData = replace_ASF_with_lvl0(folder, PhipsData);
+% 
+% produce level 1 new but keep image assignment so we dont have to do it again
+% folder = path, e.g. 
+% folder = [particleopticspath, '\PHIPS Results\Campaigns\', campaign, filesep, flight, filesep, 'Level Files', filesep];
+% level = 1 or 2 or ...
 
+% initialize
+% particleopticspath = 'P:\';
+% campaign = 'SOCRATES';
+% flight = 'RF11';
+% folder = [particleopticspath, '\PHIPS Results\Campaigns\', campaign, filesep, flight, filesep, 'Level Files', filesep];
+cd(folder)
+
+%% load lvl 0
+listings = dir('*_level_0.csv');
+filename_0 = listings(end).name;
+Level_0 = readtable(filename_0);
+Level_0 = Level_0(Level_0.ForcedParticleFlag == 0,:); % remove forcetriggers
+Level_0.RealTimeStamp = datenum(Level_0.RealTimeStamp);
+
+%% load lvl 1
+% listings = dir(['*_level_', num2str(level), '.csv']);
+% filename_1 = listings(end).name;
+% Level_1_old = readtable(filename_1);
+% Level_1_old.RealTimeStamp = datenum(Level_1_old.RealTimeStamp);
+
+Level_1_old = PhipsData;
+
+%% clear saturated channels
+
+Level_0_varnames = Level_0.Properties.VariableNames;
+
+Level_0a = table2array(Level_0);
+scatt_channels = Level_0a(:,end-30:end);
+scatt_channels(scatt_channels >= 2047) = NaN;
+Level_0a(:,end-30:end) = scatt_channels;
+
+Level_0_cleared = array2table(Level_0a, 'VariableNames', Level_0_varnames);
+
+%% Do channle to angle order
+
+csv_filename = dir('*level_0.csv'); 
+csv_filename = csv_filename(end).name;
+% Make a filename
+C = strsplit(csv_filename,'_');
+save_filename = [C{1},'_',C{2},'_level_1.csv'];
+
+% Date
+PHIPS_date = floor(datenum(C{2},'yyyymmdd-HHMM'));
+
+if PHIPS_date>=datenum(2019,6,4)
+    v = 5;
+elseif PHIPS_date>=datenum(2017,9,22) & PHIPS_date<datenum(2019,6,4)
+    v = 4;
+elseif PHIPS_date>=datenum(2017,2,23) & PHIPS_date<datenum(2017,9,22)
+    v = 3;
+    Level_0_cleared.Properties.VariableNames{25} = 'Channel13'; % there was a mixup for the naming of ARISTO
+    Level_0_cleared.Properties.VariableNames{27} = 'Channel15';
+    Level_0.Properties.VariableNames{25} = 'Channel13'; % there was a mixup for the naming of ARISTO
+    Level_0.Properties.VariableNames{27} = 'Channel15';
+elseif PHIPS_date>=datenum(2017,2,14) & PHIPS_date<datenum(2017,2,23)
+    v = 2;
+else
+    v = 1;
+end
+Level_0_ordered = PHIPS_PMTchannel_to_angle(Level_0_cleared,v);
+Level_0_ordered = PHIPS_PMTchannel_to_angle(Level_0,v);
+
+%% put the ASF based on the cleared lvl0 back into the lvl1
+Level_1_new = Level_1_old;
+Level_1_new(:, end-19:end) = Level_0_ordered(:, end-19:end);
+
+PhipsData = Level_1_new;
+
+
+
+end
+
+%% remove shattered
+function [PhipsData,shattering_percentage] = PHIPS_remove_shattered(PhipsData,threshold)
+% Removes particles that are around interarrival times smaller than
+% threshold (threshold can be calculated by shattering_threshold.m)
+% else, 0.5 ms is a good guess
+
+
+%angle = [1	2	3	4	5	6	7	8	9	10	18	26	34	42	50	58	66	74	82	90	98	106	114	122	130	138	146	154	162	170];
+
+
+%% Length of raw_data
+% length_old_data = height(PhipsData(PhipsData.ForcedParticleFlag==0,:)); %
+length_old_data = height(PhipsData); %because in the new lvl2+ files there is no FPF
+
+%% Interarrival times
+% Find force triggers
+time_in_s = PhipsData.ParticleTimeStamp./48e6;
+interarrivaltime = diff(time_in_s); % in seconds
+ind = find(interarrivaltime<threshold);   
+
+%% Histogram of interarrival times
+figure,
+histogram(interarrivaltime.*1000,logspace(-3,5,100)); hold on
+set(gca,'FontSize',14,'linewidth',2,'xscale','log','yscale','log')
+xlabel('Interarrival time [ms]','fontsize',16)
+title('Histogram of Interarrval Times','fontsize',16)
+yl =ylim; plot([threshold.*1000 threshold.*1000],[1 yl(2)],'r','linewidth',2)
+grid on
+
+
+%% Mark entries before and after short interarrival times as NaN
+PhipsData.ParticleTimeStamp(ind,1) = NaN;
+PhipsData.ParticleTimeStamp(ind+1,1) = NaN;
+shattered_raw_data = PhipsData(isnan(PhipsData.ParticleTimeStamp),:);
+PhipsData(isnan(PhipsData.ParticleTimeStamp),:) = [];
+% length_new_data = height(PhipsData(PhipsData.ForcedParticleFlag==0,:));
+length_new_data = height(PhipsData);
+disp([num2str(100.*(1-round(length_new_data./length_old_data,3))),' % of data removed due to shattering'])
+
+% disp([num2str(num_prev-num_corr), ' out of ', num2str(num_corr), ' = ', num2str((num_prev-num_corr)/num_corr*100), '% of particles removed due to shattering'])
+
+
+%% How many PARTICLES (not data points) were removed? (e.g. 3 successive shattering events are assigned as 1 particle
+%about 30% of shattering events shatter in more than 2 fragments
+
+% num = 0;
+% for i = 1:length(ind)-1
+%     if ind(i+1)~=ind(i)+1
+%         num=num+1; %number of removed particles
+%     end
+% end
+% 
+% shattering_percentage = num/length_old_data*100; % x percent of actual particles were removed due to shattering --> this is the correction factor
+% disp([num2str(round(shattering_percentage,2)),' % of actual particles removed due to shattering (= correction factor)'])
+
+
+%% Figure
+% figure,
+% semilogy(angle(end-19:end),nanmean(table2array(shattered_raw_data(:,end-19:end)),1),'sr')
+% set(gca,'fontsize',14,'linewidth',2)
+% hold on
+% semilogy(angle(end-19:end),nanmean(table2array(PhipsData(:,end-19:end)),1),'sk')
+% ylim([1 2e3]); legend('Shattered SPF','Accepted SPF'); title([num2str(100.*(1-round(length_new_data./length_old_data,3))),' % of data removed due to shattering'],'fontsize',18)
+
+    
+
+end
+
+
+
+%% PHIPS_PMTchannel_to_angle function
+function [TABLE] = PHIPS_PMTchannel_to_angle(PhipsData,v)
+% Converts PMT channels to PHIPS angle
+% v is version number
+% v1 -> -13.2.2017
+% v2 -> 14.2.2017-22.2.2017
+% v3 -> 23.2.2017-21.9.2017
+% v4 -> 22.9.2017-03.06.2019
+% v5 -> 04.06.2019-08.11.2021
+% v6 -> 09.11.2021-
+
+%% Make an empty table
+TABLE  = cell2table(cell(size(PhipsData,1),20+13), 'VariableNames', {'DataSet', 'RealTimeStamp', 'ParticleTimeStamp', 'ElapsedParticleTime', 'ParticleTimeOfFlight', 'CameraTrigger', 'ForcedParticleFlag', 'MultiplexerValue', 'ImageCamera1','TimeStampCamera1', 'ImageCamera2','TimeStampCamera2','TriggerIntensity','ScatteringAngle18','ScatteringAngle26','ScatteringAngle34','ScatteringAngle42','ScatteringAngle50','ScatteringAngle58','ScatteringAngle66','ScatteringAngle74','ScatteringAngle82','ScatteringAngle90','ScatteringAngle98','ScatteringAngle106','ScatteringAngle114','ScatteringAngle122','ScatteringAngle130','ScatteringAngle138','ScatteringAngle146','ScatteringAngle154','ScatteringAngle162','ScatteringAngle170'});
+TABLE.DataSet = PhipsData.DataSet;
+TABLE.RealTimeStamp = PhipsData.RealTimeStamp;
+TABLE.ParticleTimeStamp = PhipsData.ParticleTimeStamp;
+TABLE.ElapsedParticleTime = PhipsData.ElapsedParticleTime;
+TABLE.ParticleTimeOfFlight = PhipsData.ParticleTimeOfFlight;
+TABLE.CameraTrigger = PhipsData.CameraTrigger;
+TABLE.ForcedParticleFlag = PhipsData.ForcedParticleFlag;
+TABLE.MultiplexerValue = PhipsData.MultiplexerValue;
+TABLE.ImageCamera1 = PhipsData.ImageCamera1;
+TABLE.ImageCamera2 = PhipsData.ImageCamera2;
+TABLE.TimeStampCamera1 = PhipsData.TimeStampCamera1;
+TABLE.TimeStampCamera2 = PhipsData.TimeStampCamera2;
+TABLE.TriggerIntensity = PhipsData.TriggerIntensity;
+
+if v == 1
+TABLE.ScatteringAngle18 = PhipsData.Channel17;
+TABLE.ScatteringAngle26 = PhipsData.Channel19;
+TABLE.ScatteringAngle34 = PhipsData.Channel2;
+TABLE.ScatteringAngle42 = PhipsData.Channel3;
+TABLE.ScatteringAngle50 = PhipsData.Channel4;
+TABLE.ScatteringAngle58 = PhipsData.Channel5;
+TABLE.ScatteringAngle66 = PhipsData.Channel6;
+TABLE.ScatteringAngle74 = PhipsData.Channel7;
+TABLE.ScatteringAngle82 = PhipsData.Channel8;
+TABLE.ScatteringAngle90 = PhipsData.Channel9;
+TABLE.ScatteringAngle98 = PhipsData.Channel10;
+TABLE.ScatteringAngle106 = PhipsData.Channel11;
+TABLE.ScatteringAngle114 = PhipsData.Channel12;
+TABLE.ScatteringAngle122 = PhipsData.Channel13;
+TABLE.ScatteringAngle130 = PhipsData.Channel14;
+TABLE.ScatteringAngle138 = PhipsData.Channel15;
+TABLE.ScatteringAngle146 = PhipsData.Channel23;
+TABLE.ScatteringAngle154 = PhipsData.Channel20;
+TABLE.ScatteringAngle162 = PhipsData.Channel21;
+TABLE.ScatteringAngle170 = PhipsData.Channel22;
+
+elseif v == 2
+TABLE.ScatteringAngle18 = PhipsData.Channel25+PhipsData.Channel26;
+TABLE.ScatteringAngle26 = PhipsData.Channel24;
+TABLE.ScatteringAngle34 = PhipsData.Channel27+PhipsData.Channel28;
+TABLE.ScatteringAngle42 = PhipsData.Channel29+PhipsData.Channel30;
+TABLE.ScatteringAngle50 = PhipsData.Channel31+PhipsData.Channel32;
+TABLE.ScatteringAngle58 = PhipsData.Channel11;
+TABLE.ScatteringAngle66 = PhipsData.Channel8;
+TABLE.ScatteringAngle74 = PhipsData.Channel6;
+TABLE.ScatteringAngle82 = PhipsData.Channel4;
+TABLE.ScatteringAngle90 = PhipsData.Channel2;
+TABLE.ScatteringAngle98 = PhipsData.Channel3;
+TABLE.ScatteringAngle106 = PhipsData.Channel5;
+TABLE.ScatteringAngle114 = PhipsData.Channel7;
+TABLE.ScatteringAngle122 = PhipsData.Channel9;
+TABLE.ScatteringAngle130 = PhipsData.Channel10;
+TABLE.ScatteringAngle138 = PhipsData.Channel12;
+TABLE.ScatteringAngle146 = PhipsData.Channel13;
+TABLE.ScatteringAngle154 = PhipsData.Channel14;
+TABLE.ScatteringAngle162 = PhipsData.Channel15;
+TABLE.ScatteringAngle170 = PhipsData.Channel23;
+
+elseif v == 3
+TABLE.ScatteringAngle18 = PhipsData.Channel25+PhipsData.Channel26;
+TABLE.ScatteringAngle26 = PhipsData.Channel20;
+TABLE.ScatteringAngle34 = PhipsData.Channel27+PhipsData.Channel28;
+TABLE.ScatteringAngle42 = PhipsData.Channel29+PhipsData.Channel30;
+TABLE.ScatteringAngle50 = PhipsData.Channel31+PhipsData.Channel32;
+TABLE.ScatteringAngle58 = PhipsData.Channel11;
+TABLE.ScatteringAngle66 = PhipsData.Channel8;
+TABLE.ScatteringAngle74 = PhipsData.Channel6;
+TABLE.ScatteringAngle82 = PhipsData.Channel4;
+TABLE.ScatteringAngle90 = PhipsData.Channel2;
+TABLE.ScatteringAngle98 = PhipsData.Channel3;
+TABLE.ScatteringAngle106 = PhipsData.Channel5;
+TABLE.ScatteringAngle114 = PhipsData.Channel7;
+TABLE.ScatteringAngle122 = PhipsData.Channel9;
+TABLE.ScatteringAngle130 = PhipsData.Channel10;
+TABLE.ScatteringAngle138 = PhipsData.Channel12;
+TABLE.ScatteringAngle146 = PhipsData.Channel13;
+TABLE.ScatteringAngle154 = PhipsData.Channel14;
+TABLE.ScatteringAngle162 = PhipsData.Channel15;
+TABLE.ScatteringAngle170 = PhipsData.Channel23;
+
+elseif v == 4
+TABLE.ScatteringAngle18 = PhipsData.Channel25+PhipsData.Channel26;
+TABLE.ScatteringAngle26 = PhipsData.Channel20;
+TABLE.ScatteringAngle34 = PhipsData.Channel17;
+TABLE.ScatteringAngle42 = PhipsData.Channel29+PhipsData.Channel30;
+TABLE.ScatteringAngle50 = PhipsData.Channel31+PhipsData.Channel32;
+TABLE.ScatteringAngle58 = PhipsData.Channel11;
+TABLE.ScatteringAngle66 = PhipsData.Channel8;
+TABLE.ScatteringAngle74 = PhipsData.Channel6;
+TABLE.ScatteringAngle82 = PhipsData.Channel4;
+TABLE.ScatteringAngle90 = PhipsData.Channel2;
+TABLE.ScatteringAngle98 = PhipsData.Channel3;
+TABLE.ScatteringAngle106 = PhipsData.Channel5;
+TABLE.ScatteringAngle114 = PhipsData.Channel7;
+TABLE.ScatteringAngle122 = PhipsData.Channel9;
+TABLE.ScatteringAngle130 = PhipsData.Channel10;
+TABLE.ScatteringAngle138 = PhipsData.Channel12;
+TABLE.ScatteringAngle146 = PhipsData.Channel13;
+TABLE.ScatteringAngle154 = PhipsData.Channel14;
+TABLE.ScatteringAngle162 = PhipsData.Channel15;
+TABLE.ScatteringAngle170 = PhipsData.Channel23;
+
+elseif v == 5
+    % empty: 14, 22, 24(defect), 26-31(free for pol.) 32(defect)
+TABLE.ScatteringAngle18 = PhipsData.Channel25;
+TABLE.ScatteringAngle26 = PhipsData.Channel23;
+TABLE.ScatteringAngle34 = PhipsData.Channel21;
+TABLE.ScatteringAngle42 = PhipsData.Channel20;
+TABLE.ScatteringAngle50 = PhipsData.Channel19;
+TABLE.ScatteringAngle58 = PhipsData.Channel18;
+TABLE.ScatteringAngle66 = PhipsData.Channel17;
+TABLE.ScatteringAngle74 = PhipsData.Channel16;
+TABLE.ScatteringAngle82 = PhipsData.Channel15;
+
+TABLE.ScatteringAngle90 = PhipsData.Channel3;
+TABLE.ScatteringAngle98 = PhipsData.Channel4;
+TABLE.ScatteringAngle106 = PhipsData.Channel5;
+TABLE.ScatteringAngle114 = PhipsData.Channel6;
+TABLE.ScatteringAngle122 = PhipsData.Channel7;
+TABLE.ScatteringAngle130 = PhipsData.Channel8;
+TABLE.ScatteringAngle138 = PhipsData.Channel9;
+TABLE.ScatteringAngle146 = PhipsData.Channel10;
+TABLE.ScatteringAngle154 = PhipsData.Channel11;
+TABLE.ScatteringAngle162 = PhipsData.Channel12;
+TABLE.ScatteringAngle170 = PhipsData.Channel13;
+
+elseif v == 6
+    % 2, 3, 14, 20, 32 (faulty); 28, 29 free but could be used for cross
+    % pol. with 13, 15; 26, 27, 30, 31 (unused) 
+TABLE.ScatteringAngle18  =  PhipsData.Channel25;
+TABLE.ScatteringAngle26  =  PhipsData.Channel24;
+TABLE.ScatteringAngle34  =  PhipsData.Channel23;
+TABLE.ScatteringAngle42  =  PhipsData.Channel22;
+TABLE.ScatteringAngle50  =  PhipsData.Channel21;
+TABLE.ScatteringAngle58  =  PhipsData.Channel19;
+TABLE.ScatteringAngle66  =  PhipsData.Channel18;
+TABLE.ScatteringAngle74  =  PhipsData.Channel17;
+TABLE.ScatteringAngle82  =  PhipsData.Channel16;
+
+TABLE.ScatteringAngle90  =  PhipsData.Channel4;
+TABLE.ScatteringAngle98  =  PhipsData.Channel5;
+TABLE.ScatteringAngle106 =  PhipsData.Channel6;
+TABLE.ScatteringAngle114 =  PhipsData.Channel7;
+TABLE.ScatteringAngle122 =  PhipsData.Channel8;
+TABLE.ScatteringAngle130 =  PhipsData.Channel9;
+TABLE.ScatteringAngle138 =  PhipsData.Channel10;
+TABLE.ScatteringAngle146 =  PhipsData.Channel11;
+TABLE.ScatteringAngle154 =  PhipsData.Channel12;
+TABLE.ScatteringAngle162 =  PhipsData.Channel13;
+TABLE.ScatteringAngle170 =  PhipsData.Channel15;
+
+elseif v == 7
+    % 2, 3, 14, 15, 20, 32 (faulty); 28, 29 free but could be used for cross
+    % pol. with 13, 15; 26, 30, 31 (unused) 
+TABLE.ScatteringAngle18  =  PhipsData.Channel25;
+TABLE.ScatteringAngle26  =  PhipsData.Channel24;
+TABLE.ScatteringAngle34  =  PhipsData.Channel23;
+TABLE.ScatteringAngle42  =  PhipsData.Channel22;
+TABLE.ScatteringAngle50  =  PhipsData.Channel21;
+TABLE.ScatteringAngle58  =  PhipsData.Channel19;
+TABLE.ScatteringAngle66  =  PhipsData.Channel18;
+TABLE.ScatteringAngle74  =  PhipsData.Channel17;
+TABLE.ScatteringAngle82  =  PhipsData.Channel16;
+
+TABLE.ScatteringAngle90  =  PhipsData.Channel4;
+TABLE.ScatteringAngle98  =  PhipsData.Channel5;
+TABLE.ScatteringAngle106 =  PhipsData.Channel6;
+TABLE.ScatteringAngle114 =  PhipsData.Channel7;
+TABLE.ScatteringAngle122 =  PhipsData.Channel8;
+TABLE.ScatteringAngle130 =  PhipsData.Channel9;
+TABLE.ScatteringAngle138 =  PhipsData.Channel10;
+TABLE.ScatteringAngle146 =  PhipsData.Channel11;
+TABLE.ScatteringAngle154 =  PhipsData.Channel12;
+TABLE.ScatteringAngle162 =  PhipsData.Channel13;
+TABLE.ScatteringAngle170 =  PhipsData.Channel27;
+
+end
+
+end

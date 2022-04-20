@@ -29,9 +29,10 @@
 %     
 %     folder = [mainfolder, flight, '\SD\'];
 
-function translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
+function translate_SD_sum_to_nc(folder, campaign, flight, tstep);
    % for tstep = [1,10]
- %  savepath =   'C:\Users\Fritz\Desktop\PHIPS SD test sens area\nc files\35\';   
+   savepath = folder; % then it saves to the same directory
+%   savepath =   'C:\Users\Fritz\Desktop\PHIPS SD test sens area\nc files\30_1s\';  % saves to a specific directory  
    if ~isdir(savepath)
        mkdir(savepath)
    end
@@ -39,7 +40,7 @@ function translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
         % tstep = 1;
         time_resolution = tstep;
         [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, counts_ice, counts_drop, ...
-            bin_endpoints_PHIPS, bin_midpoints_PHIPS] = Read_PHIPS_SD(savepath, tstep);
+            bin_endpoints_PHIPS, bin_midpoints_PHIPS] = Read_PHIPS_SD(folder, tstep);
         
         %% convert datenum to seconds after midnight
 

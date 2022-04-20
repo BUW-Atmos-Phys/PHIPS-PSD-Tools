@@ -22,20 +22,32 @@ end
 campaign = 'SOCRATES';
 flightno = 1:15;
 flight = 'RF11'; % for debugging only
+%
 %campaign = 'ACLOUD';
-%flightno = 6262 % [527, 530, 602, 604, 605, 608, 613, 614, 617, 618, 620, 623, 6261, 6262];
+%flightno =  [527, 530, 602, 604, 605, 608, 613, 614, 616, 617, 618, 620, 623, 6261, 6262];
+
+
 % flight = 'Flight 170602';
 % campaign = 'CIRRUS-HL';
 % flightno = 2:17;
 
-loop = 1; %for debugging
+save_status = 1;
+
+% Time Resolution
+tstep = 1;
+
+loop = 2; %for debugging
 
 %%
-addpath([particleopticspath,'/Software/PHIPS analysis/Size Distribution/functions'])
-addpath([particleopticspath,'/Software/PHIPS analysis/PHIPS inversion 2\Functions'])
-addpath([particleopticspath,'\Software\SID3_MATLAB\SID3 analysis\functions']) % for read aircraft data
-addpath([particleopticspath,'\Other Probes\Software Read other probes\']) % for read 2DS
+addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-PSD-Tools\Functions')
 
+% addpath([particleopticspath,'/Software/PHIPS analysis/Size Distribution/functions'])
+% addpath([particleopticspath,'/Software/PHIPS analysis/PHIPS inversion 2\Functions'])
+% addpath([particleopticspath,'\Software\SID3_MATLAB\SID3 analysis\functions']) % for read aircraft data
+% addpath([particleopticspath,'\Other Probes\Software Read other probes\']) % for read 2DS
+
+addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-Scattering-Data-Analysis-Tools\Aircraft Data Functions\') % aircraft data
+addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-Scattering-Data-Analysis-Tools\PHIPS Main Functions') % import phips
 
 %% loop over all flights
 
@@ -57,10 +69,7 @@ for loop = 1:length(flightno)
 
     %%
     
-save_status = 1;
 
-% Time Resolution
-tstep = 10;
 
 % if the plot should go only over a particular time range
 specific_interval_only = 0;
