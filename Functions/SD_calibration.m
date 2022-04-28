@@ -12,16 +12,17 @@ close all
 
 campaign = 'ACLOUD';
 flightno = [527 530 602 604 605 608 613 614 616 617 618 620 623 6261 6262];
-%campaign = 'SOCRATES';
-%flightno = 2:15;
-campaign = 'CIRRUS-HL';
-flightno = 2:17;
+campaign = 'SOCRATES';
+flightno = 1:15;
+%campaign = 'CIRRUS-HL';
+%flightno = 2:17;
 %campaign = 'IMPACTS';
 %flightno = [118, 125, 201, 207, 213, 218, 220, 225];
 
 particleopticspath = 'P:';
+particleopticspath = '\\os.lsdf.kit.edu\kit\imk-aaf\projects\ParticleOptics\';
 % particleopticspath = 'C:\Users\wa9929\Desktop';
-save_path = 'C:\Users\wa9929\Desktop\SD_Aug21\';
+save_path = 'C:\Users\Fritz\Desktop\SD_calib_uncertainty\';
 if ~isdir(save_path)
     mkdir(save_path)
 end
@@ -127,6 +128,12 @@ close all
 
 PhipsData_all_uncorrected = PhipsData_all;
 % return
+
+%%
+
+A = PhipsData_all;
+idx = find(A.DataSet >0);
+
 %% C2 correction
 % correction changes nothing for the actual calibration if the data is binned
 % for non-binned, the change is 0.2%
@@ -147,46 +154,51 @@ PhipsData_all = SD_calibration_correction_C2(input_data, campaign, particle_type
 %% scatterplot C1 vs C2
 x = PhipsData_all.diameter_C1;
 y = PhipsData_all.diameter_C2;
+XL = [1,700];
 
 figure(1)
 plot(x,y, '.')
 hold on
-plot(1:700, 1:700, 'k--')
+plot(XL, XL, 'k--')
 hold off
 grid on
 set(gca, 'xscale', 'log')
 set(gca, 'yscale', 'log')
 xlabel('Diameter CTA1')
 ylabel('Diameter CTA2')
-
+xlim(XL), ylim(XL)
 %% SD Calibration ICE
 
 % % sort in size bins
 bins = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
+bins = [30,60,100,150,200,250,300,350,400,500,600,700];
 binned_status = 1;
 particle_type = 'Ice';
 % save_status = true;
 input_data = PhipsData_all(PhipsData_all.DropletFlag == 0,:);
 
-do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
+fitresult = do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
+a_ice = fitresult.a;
+ci = confint(fitresult); a_ice_err = fitresult.a - ci(1);
 
 %% SD Calibration Droplet
 
 % % sort in size bins
-bins = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
+% bins = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
+bins = [30,60,100,150,200,250,300,350,400,500,600,700];
 binned_status = 0;
 particle_type = 'Droplets';
 % save_status = true;
 
 input_data = PhipsData_all(PhipsData_all.DropletFlag == 1,:);
 
-do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
-
-
+fitresult = do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
+a_drop = fitresult.a;
+ci = confint(fitresult); a_drop_err = fitresult.a - ci(1);
 
 
 %%
-function do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
+function fitresult = do_plot_calibration(input_data, bins, campaign, binned_status, particle_type, save_status, save_path);
 
 %%
 
@@ -204,7 +216,7 @@ num = size(SPF,1); % = anzahl_zeilen = Anzahl der Partikel
 integrated_intensity = zeros (num, 1);
 image_diameter = zeros(num, 1);
 
-thresh_C1_C2 = 3;
+thresh_C1_C2 = 1.5;
 
 for i = 1:num
     ang_temp = angle;
@@ -220,9 +232,12 @@ for i = 1:num
     elseif C2(i) > thresh_C1_C2 * C1(i)
         image_diameter (i) =  NaN;
     elseif isnan(C1(i))
+        % SHOULD PARTICLES IMAGED ON ONLY 1 CAM BE OMITTED? THIS MAKES A BIG DIFFERENCE (~20%)
+        % image_diameter (i) = NaN; %
         image_diameter (i) = C2(i);
     elseif isnan(C2(i))
-        image_diameter (i) = C1(i);
+        % image_diameter (i) = NaN; 
+        image_diameter (i) =  C1(i);
     end
 end
 disp('Done with Integrating')
@@ -238,7 +253,7 @@ end
 if strcmp(campaign, 'IMPACTS')
     BG_offset = 238.120; disp('BG OFFSET IS NOT CALCULATED PROPERLY !')
 else
-    BG_offset = BG_offset_calib(campaign);
+    [BG_offset,BG_offset_std] = BG_offset_calib(campaign);
 end
 %
 
@@ -277,6 +292,8 @@ if fixed_b_status == 1
     
     fitresult = fit( xData, yData, ft, opts);
     a_ice = fitresult.a;
+    ci = confint(fitresult);
+    a_ice_err = fitresult.a - ci(1);
     b_ice = 0.5; %fitresult.b;
     % BG_offset = fitresult.c;
 else
@@ -292,7 +309,8 @@ else
     b_ice = fitresult.b;
     
 end
-disp (['Diameter = a * [Intensity - BG]^b, a = ', num2str(a_ice), ', b = ', num2str(b_ice), ', BG = ', num2str(BG_offset)])
+disp (['Diameter = a * [Intensity - BG]^b, a = ', num2str(a_ice), ' \pm ', num2str(a_ice_err), ', b = ', num2str(b_ice),...
+    ', BG = ', num2str(BG_offset), ' \pm ', num2str(BG_offset_std)])
 
 %% plot
 fontsize = 16;
@@ -405,6 +423,7 @@ ax.YLabel.FontSize = fontsize+4;
 ax.XLabel.FontSize = fontsize+4;
 
 set(f, 'Units', 'normalized', 'Position', [0.3, 0.1, 0.5, 0.6]); %size
+
 
 save_name = ['heatmap_', particle_type, '_', filename, '_', campaign];
 if save_status == true

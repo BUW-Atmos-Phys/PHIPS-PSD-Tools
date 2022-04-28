@@ -33,10 +33,12 @@ flight = 'RF11'; % for debugging only
 
 save_status = 1;
 
-% Time Resolution
-tstep = 1;
+% flightno = 2;
 
-loop = 2; %for debugging
+% Time Resolution
+tstep = 10;
+
+loop = 1; %for debugging
 
 %%
 addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-PSD-Tools\Functions')
@@ -67,14 +69,12 @@ for loop = 1:length(flightno)
         end
     end
 
-    %%
-    
-
-
-% if the plot should go only over a particular time range
+    % if the plot should go only over a particular time range
 specific_interval_only = 0;
 disp(['Calculate SD for flight ', flight])
-
+    
+    %%
+    
 if specific_interval_only == 1
     start_time  = datenum('18-Feb-2018 03:28:00');
     end_time = datenum('18-Feb-2018 03:38:00');
@@ -87,9 +87,6 @@ end
 
 disp(['Finished with SD for flight ', flight])
 
-
-
-
 %%
 end
 
@@ -99,6 +96,56 @@ disp(['Finished with SD for all flights.'])
 % save_SD(SDice, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bins)
 % save_SD(SDdroplet, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bins)
 
+
+%% compare SD old vs new
+% savepath = 'C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\';
+% cd(savepath)
+% 
+% filename_old = "C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\SD_RF02_10s_ice_old.sum";
+% filename_new = "C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\SD_RF02_10s_ice_new.sum";
+% 
+% old_all = []; new_all = [];
+% for loop = 1:15
+%         if flightno(loop) < 10
+%             flight = ['RF0', num2str(flightno(loop))];
+%         else
+%             flight = ['RF', num2str(flightno(loop))];
+%         end
+%     filename_old = ['C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\old_200\SD_', flight , '_10s_ice.sum'];
+%     filename_new = ['C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\new_200\SD_', flight , '_10s_ice.sum'];
+%     old = dlmread(filename_old);
+%     new = dlmread(filename_new);
+%     old_all = [old_all;old]; new_all = [new_all;new]; 
+% end
+% 
+% x = old_all(:,3);
+% y = new_all(:,3);
+% 
+% XL = [1, 1e3];
+% figure(3)
+% plot(x,y,'.')
+% hold on
+% plot(XL,XL, '--k')
+% hold off
+% grid on
+% set(gca, 'xscale', 'log'), set(gca, 'yscale', 'log')
+% xlabel ('Ntot Old'), ylabel ('Ntot New')
+% title('SOCRATES all flights')
+% print(['SOCRATES_Ntot_flight_speed_correction.png'], '-dpng');
+% 
+% XL = [1, 1e3];
+% figure(4)
+% plot(x,y./x *100,'.')
+% % hold on
+% % plot(XL,XL, '--k')
+% % hold off
+% grid on
+% ylim([50,100])
+% % set(gca, 'xscale', 'log'), 
+% set(gca, 'xscale', 'log')
+% xlabel ('Ntot Old'), ylabel ('Ntot New/Old [%]')
+% title('SOCRATES all flights, D<200\mum')
+% print(['SOCRATES_Ntot_flight_speed_correction_relative.png'], '-dpng');
 
 %% Loop over all Flights
 

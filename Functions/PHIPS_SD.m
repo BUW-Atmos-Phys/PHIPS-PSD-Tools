@@ -15,9 +15,11 @@ function [SDice,SDdroplet] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path
 % ADJUST BINS ALSO IN Read_PHIPS_SD.m for translate_SD_sum_to_nc.m
 % bin_endpoints = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
 bin_endpoints = [30,60,100,150,200,250,300,350,400,500,600,700];
+% dN_ice = -999; dN_drop = -999;
 
 savepath = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'SD', filesep];
-% folder = 'C:\Users\Fritz\Desktop\PHIPS SD test sens area\';
+% savepath = 'C:\Users\Fritz\Desktop\PHIPS SD test flight speed correction\new\';
+
 % savepath = [folder, filesep, num2str(bin_endpoints(1)), '_new2_1s', filesep, flight, filesep];
 if ~isdir(savepath)
     mkdir(savepath)
@@ -65,7 +67,7 @@ end
 folder = [particleopticspath,filesep,'Phips',filesep,campaign,filesep,flight];
 folder = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'Level Files', filesep];
 
-%% Define bins
+% % Define bins
 
 bin_midpoints = bin_endpoints(1:end-1)+diff(bin_endpoints)./2;
 
@@ -86,8 +88,7 @@ A_sens_parameters_drop.a = -0.037236;
 A_sens_parameters_drop.b = -0.28694;
 A_sens_parameters_drop.c = 0.013069;
 
-
-%%
+% %
 ignore_above_saturation = 1;
 ignore_below_background = 0;
 
@@ -105,8 +106,9 @@ if exist('a_droplet')
     filename = [folder,filesep,csv_name];
     PhipsData_level_0 = import_phips(filename); %use the level_0 file later for deadtime calculation
     
-    %% get Droplet Flag from lvl 2
+    % % get Droplet Flag from lvl 2
     listings = dir('*level_2.csv');
+    %%
     if isempty(listings)
         disp('Level File not found!')
         SDice = NaN;
@@ -116,10 +118,10 @@ if exist('a_droplet')
         filename = [folder,filesep,csv_name];
         PhipsData = import_phips(filename);
         
-        %% get ASF from lvl_0
+        % % get ASF from lvl_0
         PhipsData = replace_ASF_with_lvl0(folder, PhipsData);
         
-        %% Remove saturates
+        % % Remove saturates
         % if more than 4 channels are saturated/background, remove the particle (DropletFlag = NaN)
         
         PhipsArray = table2array(PhipsData);
@@ -143,6 +145,16 @@ if exist('a_droplet')
         disp([num2str(num_sat), ' particles above saturation removed'])
         %  disp([num2str(num_BG), ' particles below BG removed'])
         
+        % % Integrate Scattering Intensity
+        % Get index of starting angle (42 degrees)
+        A = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle42'));
+        % Integrate
+        ang_temp = [42:8:170];
+        SPF_temp = table2array(PhipsData(:,A:end));
+        integrated_intensity = trapz(ang_temp, SPF_temp,2);
+        
+        PhipsData = addvars(PhipsData,integrated_intensity,'NewVariableNames','integrated_intensity');
+        
         %% Load Aircraft Data
         if strcmp(campaign,'ACLOUD')
             Aircraft_data_folder = [particleopticspath, '/SID3/ACLOUD/Flight data/'];
@@ -164,17 +176,7 @@ if exist('a_droplet')
         [time,airspeed,height,lat,lon,hFig1,hFig2,T] = Aircraft_data(campaign,Aircraft_data_folder,Aircraft_data_filename);
         close all
         
-        
-        %% Integrate Scattering Intensity
-        % Get index of starting angle (42 degrees)
-        A = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle42'));
-        % Integrate
-        ang_temp = [42:8:170];
-        SPF_temp = table2array(PhipsData(:,A:end));
-        integrated_intensity = trapz(ang_temp, SPF_temp,2);
-        
-        PhipsData = addvars(PhipsData,integrated_intensity,'NewVariableNames','integrated_intensity');
-        
+
         %% B.2. Generate histograms
         if nargin == 9 %careful when debugging this step by step: nargin command does only work if used as function
             start_time = start_time + datenum(0,0,0,0,0,tstep/2); %to compensate for the +/-tstep/2 in the next step
@@ -190,7 +192,7 @@ if exist('a_droplet')
         thresh_interarrivaltime = 0.5/1000; % = 0.5 ms
         [PhipsData] = PHIPS_remove_shattered(PhipsData,thresh_interarrivaltime);
         
-        %% Calculate Shattering Flag
+        % % Calculate Shattering Flag
         if strcmp(campaign, 'SOCRATES')
             ShatteringFlag = PHIPS_shattering_flag(SD_2DS_path,SD_2DC_path, flight, taxis);
         else
@@ -215,13 +217,14 @@ if exist('a_droplet')
             PhipsData_level_0, taxis,tstep,bin_endpoints,A_sens_parameters_drop,airspeed,time);
         conc_drop(:,1) = NaN; % delete the first bin for droplets as the lower limit is 50
         
+        
         %% Produce PHIPS_counts SD
         SDice_counts = [0 0 0 bin_midpoints;...
             taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag sum(particles_per_bin_ice,2) particles_per_bin_ice];
         SDdroplet_counts = [0 0 0 bin_midpoints;...
             taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag.*0+1 sum(particles_per_bin_drop,2) particles_per_bin_drop]; % SF for droplet is always 1
         
-        % % estimate uncertainty 
+%         % % estimate uncertainty 
         % ice
         dN_minus =  [ -24.9479  -24.0072  -18.7372  -17.7478  -14.5033  -11.3761   -7.8475   -8.1237   -5.9329   -5.2310   -3.8175];
         dN_plus =   [45.5047   44.6152   51.4139   48.3331   32.1553   23.5189   23.0540   17.5292   12.1717    6.3060    7.0891];
@@ -266,7 +269,7 @@ if exist('a_droplet')
 %         idx1 = find(taxis< t1)
         
         
-        %% check how many segments are SF = 0
+        % % check how many segments are SF = 0
         idx = find(SDice(:, 3) > 0); % Ntot > 0
         SF0 = length(find(SDice(idx,2) == 0));
         SF1 = length(find(SDice(idx,2) == 1));
@@ -283,9 +286,8 @@ if exist('a_droplet')
         save_SD(SDice, SDice_counts, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
         save_SD(SDdroplet, SDdroplet_counts, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
         
-        
         % save SD as .nc file
-%        translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
+        translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
         
     end % end of "if exists level file"
 end % end of "if exists a_droplet"
@@ -305,6 +307,9 @@ function [particles_per_bin, conc, V, V_err] = generate_histogram(PhipsData, Phi
 %% Make threshist and calculate volume
 V_bin = [];
 for i=1:length(taxis)-1
+    %%
+    
+%     i = 1293
     t1 = taxis(i)-datenum(0,0,0,0,0,1/1000); %1ms tolerance, because sometimes the timestamps are off by 1/100 ms
     t2 = taxis(i+1)+datenum(0,0,0,0,0,1/1000);
     
@@ -326,7 +331,30 @@ for i=1:length(taxis)-1
     
     % Calculate probed volume (corresponding to each particle)
     idx = time>=t1 & time<t2;  %aircraft_time
-    V_per_particle = sensitive_area .* nanmedian(airspeed(idx)).*100.*tstep*qdead; % The sampling Volume [cm-3]
+    TAS = nanmedian(airspeed(idx));
+    
+    % correction flight speed        
+    % https://amt.copernicus.org/articles/9/5135/2016/
+    % -25 % for D<70, -5% for D>70
+    
+    xi = 0.99 + 2.55e-4 * TAS - 3.3e-6 * TAS .^2;
+%     mu = [];
+%     if length(sensitive_area)>0
+%         for j = 1:length(sensitive_area)
+%             if dp(j) < 70
+%                 mu(j,1) = 0.8;
+%             else
+%                 mu(j,1) = 1;
+%             end
+%         end
+%     else
+%         mu = 1;
+%     end
+    mu = 1;
+    corr_flight_speed = xi * mu; 
+    % corr_flight_speed = 1;
+    
+    V_per_particle = sensitive_area * TAS .*100.*tstep*qdead ./corr_flight_speed; % The sampling Volume [cm-3]
     
     % % OLD
     sensitive_area_bin = A_sens_parameters.a.*bin_endpoints.^ A_sens_parameters.b + A_sens_parameters.c ; % cm2 % error 27.5%
@@ -335,7 +363,7 @@ for i=1:length(taxis)-1
     
     % Calculate probed volume (corresponding to each particle)
     idx = time>=t1 & time<t2;  %aircraft_time
-    V_bin(i,:) = sensitive_area_bin .* nanmedian(airspeed(idx)).*100.*tstep*qdead;
+    V_bin(i,:) = sensitive_area_bin * TAS .*100.*tstep*qdead;
     
 %% sort in bins
 

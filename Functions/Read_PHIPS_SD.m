@@ -1,4 +1,4 @@
-function [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, counts_ice, counts_drop, ...
+function [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, N_ice_uncertainty, N_drop_uncertainty, counts_ice, counts_drop, ...
     bin_endpoints_PHIPS, bin_midpoints_PHIPS] = Read_PHIPS_SD(savepath, tstep);
 
 % folder = [particleopticspath,filesep, 'PHIPS Results', filesep, campaign, filesep, flight, filesep, 'SD'];
@@ -36,8 +36,10 @@ time_PHIPS = SD_ice_raw(2:end,1);
 ShatteringFlag = SD_ice_raw(2:end,2);
 SD_PHIPS_drop = SD_drop_raw(2:end,5:end);
 N_drop = SD_drop_raw(2:end,3);
+N_drop_uncertainty = SD_drop_raw(2:end,4);
 SD_PHIPS_ice = SD_ice_raw(2:end,5:end);
 N_ice = SD_ice_raw(2:end,3);
+N_ice_uncertainty = SD_ice_raw(2:end,4);
 %SD_tot = SD_drop + SD_ice;
 
 %% consistency check: diameter
