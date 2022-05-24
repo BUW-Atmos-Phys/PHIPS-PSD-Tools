@@ -16,12 +16,12 @@ if isempty(listings)
     return 
 end
 filename = listings(end).name;
-filename = [savepath,'\',filename];
+filename = [savepath,filesep,filename];
 SD_drop_raw = dlmread(filename);
 
 listings = dir(['*', num2str(tstep), 's_ice.sum']); 
 filename = listings(end).name;
-filename = [savepath,'\',filename];
+filename = [savepath,filesep,filename];
 SD_ice_raw = dlmread(filename);
 
 %%
@@ -71,13 +71,13 @@ if isempty(listings)
     return 
 end
 filename = listings(end).name;
-filename = [savepath,'\',filename];
-counts_drop_raw = dlmread(filename);
+filename = [savepath,filesep,filename];
+counts_drop_raw = readmatrix(filename,'FileType','text');
 
 listings = dir(['*', num2str(tstep), 's_ice_counts.sum']); 
 filename = listings(end).name;
-filename = [savepath,'\',filename];
-counts_ice_raw = dlmread(filename);
+filename = [savepath,filesep,filename];
+counts_ice_raw = readmatrix(filename,'FileType','text');
 
 counts_drop = counts_drop_raw(2:end,4:end);
 counts_ice = counts_ice_raw(2:end,4:end);
