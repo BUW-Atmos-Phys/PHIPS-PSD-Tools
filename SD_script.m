@@ -1,12 +1,7 @@
-
-
-%%
-
-clear all
-close all
+clear all; close all
 %%
 if ismac
-    particleopticspath = '/Users/emma/ParticleOptics';
+    particleopticspath = '/Volumes/ParticleOptics';
 %elseif isunix
     % Code to run on Linux platform
 elseif ispc
@@ -19,13 +14,12 @@ else
     disp('Platform not supported')
 end
 
-campaign = 'SOCRATES';
-flightno = 1:15;
-flight = 'RF11'; % for debugging only
-%
-%campaign = 'ACLOUD';
-%flightno =  [527, 530, 602, 604, 605, 608, 613, 614, 616, 617, 618, 620, 623, 6261, 6262];
+% campaign = 'SOCRATES';
+% flightno = 1:15;
+% flight = 'RF11'; % for debugging only
 
+campaign = 'ACLOUD';
+flightno =  [616];
 
 % flight = 'Flight 170602';
 % campaign = 'CIRRUS-HL';
@@ -33,23 +27,17 @@ flight = 'RF11'; % for debugging only
 
 save_status = 1;
 
-% flightno = 2;
-
 % Time Resolution
-tstep = 10;
+tstep = 1;
 
-loop = 1; %for debugging
+% Path to 2DS / CIP
+SD_2DS_path = [particleopticspath, filesep,'Other Probes',filesep,campaign,'ACLOUD_CDP_CIP_PIP_data',filesep];
+SD_2DC_path = [particleopticspath, filesep,'Other Probes',filesep,campaign,'ACLOUD_CDP_CIP_PIP_data',filesep];
 
 %%
-addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-PSD-Tools\Functions')
-
-% addpath([particleopticspath,'/Software/PHIPS analysis/Size Distribution/functions'])
-% addpath([particleopticspath,'/Software/PHIPS analysis/PHIPS inversion 2\Functions'])
-% addpath([particleopticspath,'\Software\SID3_MATLAB\SID3 analysis\functions']) % for read aircraft data
-% addpath([particleopticspath,'\Other Probes\Software Read other probes\']) % for read 2DS
-
-addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-Scattering-Data-Analysis-Tools\Aircraft Data Functions\') % aircraft data
-addpath('C:\Users\Fritz\Documents\GitHub\PHIPS-Scattering-Data-Analysis-Tools\PHIPS Main Functions') % import phips
+addpath('/Users/emma/Documents/GitHub/PHIPS-PSD-Tools/Functions')
+addpath('/Users/emma/Documents/GitHub/PHIPS-Scattering-Data-Analysis-Tools/Aircraft Data Functions\') % aircraft data
+addpath('/Users/emma/Documents/GitHub/PHIPS-Scattering-Data-Analysis-Tools/PHIPS Main Functions') % import phips
 
 %% loop over all flights
 
@@ -68,33 +56,17 @@ for loop = 1:length(flightno)
             flight = 'Flight 170626b';
         end
     end
-
-    % if the plot should go only over a particular time range
-specific_interval_only = 0;
-disp(['Calculate SD for flight ', flight])
-    
-    %%
-    
-if specific_interval_only == 1
-    start_time  = datenum('18-Feb-2018 03:28:00');
-    end_time = datenum('18-Feb-2018 03:38:00');
-    tstep = etime(datevec(end_time),datevec(start_time));
-    [SDice,SDdroplet] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path,campaign,flight,tstep,save_status,start_time,end_time);
-else
+    disp(['Calculate SD for flight ', flight])
     [SDice,SDdroplet] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path,campaign,flight,tstep,save_status);
-end
-
-
-disp(['Finished with SD for flight ', flight])
+    disp(['Finished with SD for flight ', flight])
 
 %%
 end
-
-disp(['Finished with SD for all flights.'])
+disp('Finished with SD for all flights.')
 
 %% Save Files
-% save_SD(SDice, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bins)
-% save_SD(SDdroplet, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bins)
+save_SD(SDice, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bins)
+save_SD(SDdroplet, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bins)
 
 
 %% compare SD old vs new

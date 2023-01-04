@@ -10,12 +10,12 @@ clear all
 close all
 %%
 
-campaign = 'ACLOUD';
-flightno = [527 530 602 604 605 608 613 614 616 617 618 620 623 6261 6262];
-campaign = 'SOCRATES';
-flightno = 1:15;
-%campaign = 'CIRRUS-HL';
-%flightno = 2:17;
+% campaign = 'ACLOUD';
+% flightno = [527 530 602 604 605 608 613 614 616 617 618 620 623 6261 6262];
+% campaign = 'SOCRATES';
+% flightno = 1:15;
+campaign = 'CIRRUS-HL';
+flightno = 2:17;
 %campaign = 'IMPACTS';
 %flightno = [118, 125, 201, 207, 213, 218, 220, 225];
 
@@ -28,7 +28,7 @@ if ~isdir(save_path)
 end
 
 doplot = 1;
-save_status = 1;
+save_status = 0;
 
 addpath([particleopticspath, '/Software/PHIPS analysis/PHIPS inversion 2/Functions/'])
 addpath([particleopticspath, '/Software/SID3_MATLAB/SID3 analysis/functions'])
@@ -66,7 +66,7 @@ for loop=1:length(flightno)
     end
     
     disp(['Processing ', flight])
-    folder = [particleopticspath, '\Phips Results\Campaigns\', campaign, '\', flight, filesep, 'Level Files', filesep];
+    folder = [particleopticspath, '\PHIPS Results\Campaigns\', campaign, '\', flight, filesep, 'Level Files', filesep];
     
     cd(folder)
     listings = dir('*level_3.csv');
@@ -74,7 +74,7 @@ for loop=1:length(flightno)
         disp('Level File for this flight does not exist!')
     else
         csv_name = listings(end).name;
-        filename = [folder,'\',csv_name];
+        filename = [folder,filsesep,csv_name];
         
         PhipsData = import_phips(filename);
         
