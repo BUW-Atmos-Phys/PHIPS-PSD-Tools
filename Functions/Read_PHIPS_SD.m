@@ -1,16 +1,11 @@
 function [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, N_ice_uncertainty, N_drop_uncertainty, counts_ice, counts_drop, ...
-    bin_endpoints_PHIPS, bin_midpoints_PHIPS] = Read_PHIPS_SD(savepath, tstep);
+    bin_endpoints_PHIPS, bin_midpoints_PHIPS,bin_midpoints_area_PHIPS, ...
+    SD_PHIPS_ice_area,A_ice] = Read_PHIPS_SD(savepath, tstep)
 
-% folder = [particleopticspath,filesep, 'PHIPS Results', filesep, campaign, filesep, flight, filesep, 'SD'];
-% C:\Users\wa9929\Desktop\SD_Emma\PHIPS Results\Campaigns\SOCRATES\RF08\SD
 
-% folder = 'C:\Users\Fritz\Desktop\RF02\SD\'
-
-% tstep = 1;
-
-%% Load PHIPS SD
+%% Load PHIPS PSD - Number
 cd(savepath)
-listings = dir(['*', num2str(tstep), 's_droplet.sum']); 
+listings = dir(['*', num2str(tstep), 's_droplet_v1.sum']); % PSDs based on images
 if isempty(listings)
     disp('No SD found!')
     return 
@@ -19,10 +14,21 @@ filename = listings(end).name;
 filename = [savepath,filesep,filename];
 SD_drop_raw = dlmread(filename);
 
-listings = dir(['*', num2str(tstep), 's_ice.sum']); 
+listings = dir(['*', num2str(tstep), 's_ice_v1.sum']); % PSDs based on images
 filename = listings(end).name;
 filename = [savepath,filesep,filename];
 SD_ice_raw = dlmread(filename);
+
+%% Load PHIPS PSD - Area
+listings = dir(['*', num2str(tstep), 's_ice_area.sum']); % PSDs based on images
+if isempty(listings)
+    disp('No SD found!')
+    return 
+end
+filename = listings(end).name;
+filename = [savepath,filesep,filename];
+SD_ice_area_raw = dlmread(filename);
+
 
 %%
 % consistency check: are SD files the same size?
@@ -32,23 +38,26 @@ if size(SD_drop_raw) ~= size(SD_ice_raw)
 end
 
 time_PHIPS = SD_ice_raw(2:end,1);
-
 ShatteringFlag = SD_ice_raw(2:end,2);
+
+% PSD counts
 SD_PHIPS_drop = SD_drop_raw(2:end,5:end);
 N_drop = SD_drop_raw(2:end,3);
 N_drop_uncertainty = SD_drop_raw(2:end,4);
 SD_PHIPS_ice = SD_ice_raw(2:end,5:end);
 N_ice = SD_ice_raw(2:end,3);
 N_ice_uncertainty = SD_ice_raw(2:end,4);
-%SD_tot = SD_drop + SD_ice;
+
+% PSD area 
+SD_PHIPS_ice_area = SD_ice_area_raw(2:end,5:end);
+A_ice = SD_ice_area_raw(2:end,3); % total area [um2 L-1]
+
 
 %% consistency check: diameter
 bin_midpoints_PHIPS = SD_drop_raw(1, 5:end);
+bin_midpoints_area_PHIPS = pi .* (bin_midpoints_PHIPS./2).^2;
 
-% bin_endpoints_PHIPS = [20,45,70,100,150,200,250,300,350,400,500,600,700];
-% bin_endpoints_PHIPS = [20,40,60,80,100,125,150,200,250,300,350,400,500,600,700];
-% bin_endpoints_PHIPS = [35,50,60,80,100,125,150,200,250,300,350,400,500,600,700];
-bin_endpoints_PHIPS = [30,60,100,150,200,250,300,350,400,500,600,700];
+bin_endpoints_PHIPS = [15,30,60,100,150,200,250,300,350,400,500,600,700];
 
 % problem: you cant calculate bin_endpoints from midpoints
 % idea:  at least check the other way, if it fits

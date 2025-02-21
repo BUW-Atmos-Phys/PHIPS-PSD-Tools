@@ -2,8 +2,6 @@
 function save_SD(DATA_in,DATA_in_counts, save_status, savepath, campaign, flight, tstep, a, b, bins)
 % save SD as .sum and .txt
 
-% savepath = 'C:\Users\wa9929\Desktop';
-
 if save_status == 1
     % Check if quicklooks folder exists
     if ~exist(savepath,'dir')
