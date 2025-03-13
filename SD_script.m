@@ -14,20 +14,13 @@ campaign = 'CIRRUS-HL';
 flightno = 2:23;
 
 % Time Resolution
-tstep = 2; % in seconds
+tstep = 1; % in seconds
 save_status = 1;
 
 
 %% Generate paths
-if ismac
-    particleopticspath = '/Users/emma/ParticleOptics';
-%elseif isunix
-    % Code to run on Linux platform
-elseif ispc
-    particleopticspath = 'P:';
-else
-    disp('Platform not supported')
-end
+Aircraft_data_folder = '/Users/emma/Documents/Field campaigns/CIRRUS-HL/BAHAMAS/';
+particleopticspath = [];
 
 % Path to 2DS / CIP
 SD_2DS_path = [particleopticspath, filesep,'Other Probes',filesep,campaign,'ACLOUD_CDP_CIP_PIP_data',filesep];
@@ -51,7 +44,14 @@ for loop = 1:length(flightno)
         end
     end
     disp(['Calculate SD for flight ', flight])
-    [SDice,SDdroplet,SDice_v1,SDdroplet_v1,SDice_area] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path,campaign,flight,tstep,save_status);
+    % Folder for PHIPS level files
+    folder = ['/Users/emma/Documents/Field campaigns/',campaign,'/PHIPS Results/',flight,'/Level Files/'];
+    % Folder for saving data
+    savepath = ['/Users/emma/Documents/Field campaigns/',campaign,'/PHIPS Results/',flight,'/SD/'];
+
+    [SDice,SDdroplet,SDice_v1,SDdroplet_v1,SDice_area,Bext,IWC] = ...
+    PHIPS_SD(Aircraft_data_folder, folder, savepath, SD_2DS_path,SD_2DC_path,...
+    campaign,flight,tstep,save_status);
     disp(['Finished with SD for flight ', flight])
 
 

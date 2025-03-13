@@ -20,10 +20,13 @@ for loop =  1:length(flightno)
     flight = make_flight_name(campaign,flightno(loop));
 
     % Folder where SD files are
-    sourcepath = ['/Users/emma/ParticleOptics/PHIPS Results/Campaigns/',campaign,filesep', flight, filesep,'SD',filesep];
+    sourcepath = ['/Users/emma/Documents/Field campaigns/CIRRUS-HL/PHIPS Results',filesep, flight, filesep,'SD',filesep];
     savepath = ['/Users/emma/Documents/Field Campaigns/',campaign,'/PHIPS/PHIPS nc files/',num2str(tstep),'s',filesep];
     
-    translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, savepath, particleopticspath);
+    % Folder where aircraft data is
+    Aircraft_data_folder = '/Users/emma/Documents/Field campaigns/CIRRUS-HL/BAHAMAS/';
+
+    translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, savepath, Aircraft_data_folder);
 end
 
 
@@ -48,7 +51,7 @@ function flight = make_flight_name(campaign,flight_num)
     disp(flight)
 end
 
-function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, savepath, particleopticspath)
+function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, savepath, Aircraft_data_folder)
 % #######
 % careful, this does not work if the save directory already has an nc file
 % with the same name
@@ -60,15 +63,21 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
    
    %% Read PHIPS data
    % PSDs based on particle images (when not available to scattering data)
-    [time_PHIPS, QualityFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, ... 
-        N_ice_uncertainty, N_drop_uncertainty, counts_ice, counts_drop, ...
-        bin_endpoints_PHIPS, bin_midpoints_PHIPS,bin_midpoints_area_PHIPS, ...
-        SD_PHIPS_ice_area,A_ice] = Read_PHIPS_SD(sourcepath, tstep);
+    [time_PHIPS, QualityFlag, SD_PHIPS_ice, SD_PHIPS_ice_only_images, SD_PHIPS_drop, ...
+    N_ice, N_ice_only_images, N_drop, ...
+    N_ice_uncertainty, N_ice_uncertainty_only_images, N_drop_uncertainty, ...
+    counts_ice, counts_ice_only_images, counts_drop, ...
+    bin_endpoints_PHIPS, bin_midpoints_PHIPS,bin_midpoints_area_PHIPS, ...
+    SD_PHIPS_ice_area, SD_PHIPS_ice_area_only_images, A_ice] = ...
+    Read_PHIPS_SD(sourcepath, tstep);
     
     % IWC, Reff and Bext
     IWC = load([sourcepath,'IWC_',num2str(tstep),'s.txt']); IWC = IWC(:,2);
     Bext = load([sourcepath,'Bext_',num2str(tstep),'s.txt']); Bext = Bext(:,2);
     Reff = load([sourcepath,'Reff_',num2str(tstep),'s.txt']); Reff = Reff(:,2);
+    Reff_only_images = load([sourcepath,'Reff_only_images_',num2str(tstep),'s.txt']); Reff_only_images = Reff_only_images(:,2);
+    Rm = load([sourcepath,'Reff_',num2str(tstep),'s.txt']); Rm = Rm(:,2);
+    Rm_only_images = load([sourcepath,'Rm_only_images_',num2str(tstep),'s.txt']); Rm_only_images = Rm_only_images(:,2);
     
     % convert datenum to seconds after midnight
     t_vec = datevec(time_PHIPS(:));
@@ -79,18 +88,18 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
 
     %% Read aircraft data
     if strcmp(campaign,'ACLOUD')
-        Aircraft_data_folder = [particleopticspath, '/SID3/ACLOUD/Flight data/'];
+        %Aircraft_data_folder = [particleopticspath, '/SID3/ACLOUD/Flight data/'];
         flight_date = strsplit(flight, ' ');
         flight_date = flight_date{2};
         Aircraft_data_filename = ['AircraftData_', flight_date, '.dat'];
     elseif strcmp(campaign,'SOCRATES')
-        Aircraft_data_folder = [particleopticspath,'/Phips/SOCRATES/Flight data/'];
+        %Aircraft_data_folder = [particleopticspath,'/Phips/SOCRATES/Flight data/'];
         Aircraft_data_filename = ['SOCRATES',lower(flight),'.nc'];
     elseif strcmp(campaign,'CIRRUS-HL')
-        Aircraft_data_folder = [particleopticspath,filesep,'Phips',filesep,'CIRRUS-HL',filesep,'Flight data',filesep];
+        %Aircraft_data_folder = [particleopticspath,filesep,'Phips',filesep,'CIRRUS-HL',filesep,'Flight data',filesep];
         flightnum = strsplit(flight,'RF');
         flightnum = flightnum{2};
-        listings = dir([Aircraft_data_folder, 'CIRRUSHL_F', flightnum, '_*_BAHAMAS_v1.nc']);
+        listings = dir([Aircraft_data_folder, '*CIRRUSHL_F', flightnum, '_*_BAHAMAS_v1.nc']);
         Aircraft_data_filename = listings(end).name;
     end
         
@@ -113,8 +122,13 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
 
     
     %% 1. create file with variable
-    % careful! you cannot create a nc file with the same name that already exists
     filename = [savepath, 'PHIPS_SD_', campaign,'_', flight, '_', num2str(tstep), 's', '.nc'];
+    
+    % Check if file exists and delete it
+    if exist(filename, 'file') == 2
+        delete(filename);
+    end
+
     %nccreate(filename,'time_PHIPS', 'Dimensions', {'time',size(time_PHIPS,1),'row',size(time_PHIPS,2)}, 'FillValue','disable');
     nccreate(filename,'time_sec_af_midn', 'Dimensions', {'time',size(time_PHIPS_sec_af_midn,1),'row',size(time_PHIPS_sec_af_midn,2)}, 'FillValue','disable');
     nccreate(filename,'T', 'Dimensions', {'time',size(T,1),'y1',size(T,2)}, 'FillValue','disable');
@@ -125,8 +139,10 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
     nccreate(filename,'QualityFlag', 'Dimensions', {'time',size(QualityFlag,1),'row',size(QualityFlag,2)}, 'FillValue','disable');
     
     nccreate(filename,'PSD_ice', 'Dimensions', {'time',size(SD_PHIPS_ice,1),'size_bins',size(SD_PHIPS_ice,2)}, 'FillValue','disable');
+    nccreate(filename,'PSD_ice_image', 'Dimensions', {'time',size(SD_PHIPS_ice_only_images,1),'size_bins',size(SD_PHIPS_ice_only_images,2)}, 'FillValue','disable');
     nccreate(filename,'PSD_drop', 'Dimensions', {'time',size(SD_PHIPS_drop,1),'size_bins',size(SD_PHIPS_drop,2)}, 'FillValue','disable');
     nccreate(filename,'PAD_ice', 'Dimensions', {'time',size(SD_PHIPS_ice,1),'size_bins',size(SD_PHIPS_ice,2)}, 'FillValue','disable');
+    nccreate(filename,'PAD_ice_image', 'Dimensions', {'time',size(SD_PHIPS_ice_only_images,1),'size_bins',size(SD_PHIPS_ice_only_images,2)}, 'FillValue','disable');
     nccreate(filename,'PAD_drop', 'Dimensions', {'time',size(SD_PHIPS_drop,1),'size_bins',size(SD_PHIPS_drop,2)}, 'FillValue','disable');
     
     nccreate(filename,'N_ice', 'Dimensions', {'time',size(N_ice,1),'row',size(N_ice,2)}, 'FillValue','disable');
@@ -138,8 +154,11 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
     
     nccreate(filename,'IWC', 'Dimensions', {'time',size(IWC,1),'y1',size(IWC,2)}, 'FillValue','disable');
     nccreate(filename,'Reff', 'Dimensions', {'time',size(Reff,1),'y1',size(Reff,2)}, 'FillValue','disable');
+    nccreate(filename,'Reff_image', 'Dimensions', {'time',size(Reff,1),'y1',size(Reff_only_images,2)}, 'FillValue','disable');
     nccreate(filename,'b_ext', 'Dimensions', {'time',size(Bext,1),'y1',size(Bext,2)}, 'FillValue','disable');
-
+    nccreate(filename,'Rm', 'Dimensions', {'time',size(Rm,1),'y1',size(Rm,2)}, 'FillValue','disable');
+    nccreate(filename,'Rm_image', 'Dimensions', {'time',size(Rm,1),'y1',size(Rm,2)}, 'FillValue','disable');
+    
     nccreate(filename,'bin_endpoints', 'Dimensions', {'row',size(bin_endpoints_PHIPS,1),'size_bin_limits',size(bin_endpoints_PHIPS,2)}, 'FillValue','disable');
     nccreate(filename,'bin_midpoints', 'Dimensions', {'row',size(bin_midpoints_PHIPS,1),'size_bins',size(bin_midpoints_PHIPS,2)}, 'FillValue','disable');
     
@@ -172,12 +191,18 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
     ncwrite(filename,'PSD_ice',SD_PHIPS_ice)
         ncwriteatt(filename,'PSD_ice','unit','dN/dlogDp in #/L');
         ncwriteatt(filename,'PSD_ice','long name','Particle size distribution – Ice');
+    ncwrite(filename,'PSD_ice_image',SD_PHIPS_ice_only_images)
+        ncwriteatt(filename,'PSD_ice_image','unit','dN/dlogDp in #/L');
+        ncwriteatt(filename,'PSD_ice_image','long name','Particle size distribution – Ice. PSD based on imaged particles only that are manually classified. Shattered particles and multiple particles in one frame are excluded.');
     ncwrite(filename,'PSD_drop',SD_PHIPS_drop)
         ncwriteatt(filename,'PSD_drop','unit','dN/dlogDp in #/L');
         ncwriteatt(filename,'PSD_drop','long name','Particle size distribution – Droplet');
     ncwrite(filename,'PAD_ice',SD_PHIPS_ice_area)
         ncwriteatt(filename,'PAD_ice','unit','dA/dlogDp in um^2/L');
         ncwriteatt(filename,'PAD_ice','long name','Particle area distribution – Ice');
+    ncwrite(filename,'PAD_ice_image',SD_PHIPS_ice_area_only_images)
+        ncwriteatt(filename,'PAD_ice','unit','dA/dlogDp in um^2/L');
+        ncwriteatt(filename,'PAD_ice','long name','Particle area distribution – Ice. PAD based on imaged particles only that are manually classified. Shattered particles and multiple particles in one frame are excluded.');
     ncwrite(filename,'N_ice',N_ice)
         ncwriteatt(filename,'N_ice','unit','particles per liter');
         ncwriteatt(filename,'N_ice','long name','Total concentration – Ice');
@@ -199,6 +224,15 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
     ncwrite(filename,'Reff',Reff)
         ncwriteatt(filename,'Reff','unit','micron');
         ncwriteatt(filename,'Reff','long name','Effective radius');
+    ncwrite(filename,'Reff_image',Reff_only_images)
+        ncwriteatt(filename,'Reff_image','unit','micron');
+        ncwriteatt(filename,'Reff_image','long name','Effective radius based on imaged particles only that are manually classified. Shattered particles and multiple particles in one frame are excluded.');
+    ncwrite(filename,'Rm',Rm)
+        ncwriteatt(filename,'Rm','unit','micron');
+        ncwriteatt(filename,'Rm','long name','Mass-equivalent spherical radius. For definition see Baran et al., 2005.');
+    ncwrite(filename,'Rm_image',Rm_only_images)
+        ncwriteatt(filename,'Rm_image','unit','micron');
+        ncwriteatt(filename,'Rm_image','long name','Mass-equivalent spherical radius based on imaged particles only that are manually classified. Shattered particles and multiple particles in one frame are excluded.');
     ncwrite(filename,'b_ext',Bext)
         ncwriteatt(filename,'counts_drop','unit','km-1');
         ncwriteatt(filename,'counts_drop','long name','Extinction coefficient');
@@ -211,7 +245,7 @@ function translate_SD_sum_to_nc_function(sourcepath, campaign, flight, tstep, sa
 
     % % 3. write attributes
     fileattrib(filename,"+w");
-    ncwriteatt(filename,"/","note",'Please contact E. Jaervinen before publication, emma.jaervinen@kit.edu');
+    ncwriteatt(filename,"/","note",'Please contact E. Jaervinen before publication, jaervinen@uni-wuppertal.de');
     ncwriteatt(filename,"/","creation_date",datestr(now));
     ncwriteatt(filename,"/","time_resolution",[num2str(tstep),'s']);
     ncwriteatt(filename,"/","reference",'https://doi.org/10.5194/amt-14-3049-2021');

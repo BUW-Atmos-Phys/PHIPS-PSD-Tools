@@ -1,4 +1,6 @@
 %% Revision history
+% 12.03.2025, EJ, added mass-equivalent spherical radius 
+% 04.03.2025, EJ, added PSD for only imaged particles
 % 05.04.2024, EJ, added one bin for 15 to 30 micron.
 % 01.06.2023, EJ, added extinction coefficient, IWC and effective radius.
 % 31.05.2023, EJ, added PSD based on projected area.
@@ -8,9 +10,13 @@
 % 08.12.2021, FW, sens volume is calculated for each particle (not just once per bin)
 % 07.02.2022, FW, adjusted paths and improved documentation
 
-function [SDice,SDdroplet,SDice_v1,SDdroplet_v1,SDice_area,Bext,IWC] = PHIPS_SD(particleopticspath,SD_2DS_path,SD_2DC_path,campaign,flight,tstep,save_status,start_time,end_time)
+function [SDice,SDdroplet,SDice_v1,SDdroplet_v1,SDice_area,Bext,IWC] = ...
+    PHIPS_SD(Aircraft_data_folder, folder, savepath, SD_2DS_path,SD_2DC_path,...
+    campaign,flight,tstep,save_status,start_time,end_time)
 % PHIPS size distribution from scattering data
-% Input arguments: POpath -> path to ParticleOptics
+% Input arguments: Aircraft_data_folder -> path to aircraft data
+%                  folder -> folder to PHIPS level files
+%                  savepath -> path where PSDs are saved
 %                  SD_2DS_path -> path to Wei's 2DS and 2DC data
 %                  flight -> flight name
 %                  campaign -> campaign name, e.g. 'SOCRATES'
@@ -21,9 +27,17 @@ function [SDice,SDdroplet,SDice_v1,SDdroplet_v1,SDice_area,Bext,IWC] = PHIPS_SD(
 bin_endpoints = [15,30,60,100,150,200,250,300,350,400,500,600,700];
 % dN_ice = -999; dN_drop = -999;
 
-savepath = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'SD', filesep];
+%savepath = [particleopticspath,filesep,'PHIPS Results', filesep, 'Campaigns', filesep,campaign,filesep,flight, filesep, 'SD', filesep];
+%savepath = [particleopticspath,filesep,flight, filesep, 'SD', filesep]; % POISTA
 if ~isfolder(savepath)
     mkdir(savepath)
+end
+
+% Shattering threshold
+if strcmp(campaign,'CIRRUS-HL')
+    thresh_interarrivaltime = 0.1/1000; % = 0.1 ms
+else
+    thresh_interarrivaltime = 0.5/1000; % = 0.5 ms
 end
 
 %% Calibration coefficients
@@ -66,7 +80,8 @@ else
 end
 
 %% Folder to PHIPS data
-folder = [particleopticspath,filesep,'Phips',filesep,campaign,filesep,flight];
+%folder = [particleopticspath,filesep,'Phips',filesep,campaign,filesep,flight];
+%folder = [particleopticspath,filesep,'PHIPS Results',filesep,flight]; % POISTA
 
 
 %% PHIPS sensitive area
@@ -101,20 +116,28 @@ end
 
 
 %% A.1) Load Data
-% PhipsData Lvl 0 and Lvl 3
+% PhipsData Lvl 0, Lvl 3 and Lvl 5
 % Level 0 is needed for dead time calculation
 cd(folder)
-listings = dir('*level_3.csv');   
-% Check if level 3 exists
+
+% Level 5
+listings = dir('*level_5.csv');   
 if isempty(listings)
-    disp('Level 3 File not found!')
-    SDice = NaN;
-    SDdroplet = NaN;
-    return
+    disp('Level 5 File not found!')
+    % Check if level 3 exists
+    listings = dir('*level_3.csv');   
+    if isempty(listings)
+        disp('Level 3 File not found! PSDs cannot be produced.')
+        SDice = NaN;
+        SDdroplet = NaN;
+        return
+    end
+    SDice_only_images = NaN;
+    Reff_only_images = NaN;
 end
 csv_name = listings(end).name; filename = [folder,filesep,csv_name];
 PhipsData = readtable(filename); PhipsData.RealTimeStamp = datenum(PhipsData.RealTimeStamp);
-        
+
 % Level 0
 listings = dir('*level_0.csv');
 csv_name = listings(end).name; filename = [folder,filesep,csv_name];
@@ -127,14 +150,15 @@ for i = A: width(PhipsData)
 end  
 
 % Load Aircraft Data
-[time,airspeed] = get_airspeed(campaign,flight,particleopticspath);
+[time,airspeed] = get_airspeed(campaign,flight,Aircraft_data_folder);
        
 % % 1.b) Integrate Scattering Intensity
 % Get index of starting angle (42 degrees)
 A = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle42'));
+B = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle170'));
 % Integrate
 ang_temp = [42:8:170];
-SPF_temp = table2array(PhipsData(:,A:end));
+SPF_temp = table2array(PhipsData(:,A:B));
 integrated_intensity = trapz(ang_temp, SPF_temp,2);
 PhipsData = addvars(PhipsData,integrated_intensity,'NewVariableNames','integrated_intensity');
 
@@ -147,19 +171,21 @@ PhipsData = addvars(PhipsData,integrated_intensity,'NewVariableNames','integrate
 PhipsData = addvars(PhipsData, PhipsData.DropletFlag, 'Before', 'DropletFlag', 'NewVariableNames', 'DropletFlag_image');
 
 % if more than 4 channels are saturated/background, remove the particle (DropletFlag = NaN)
-PhipsArray = table2array(PhipsData);
+A = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle42'));
+B = find(strcmpi(PhipsData.Properties.VariableNames,'ScatteringAngle170'));
+PhipsArray = table2array(PhipsData(:,A:B));
 
-sat_tresh = 4; %saturated if >= X chanels are saturated
+sat_tresh = 4; % saturated if >= X chanels are saturated
 bg_tresh = 4;
 
 num_sat = 0; num_BG = 0;
 for i = 1:size(PhipsArray,1)
-    if sum(PhipsArray(i, end-16:end) >= 2047) >= sat_tresh && ignore_above_saturation == 1
+    if sum(PhipsArray(i, :) >= 2047) >= sat_tresh && ignore_above_saturation == 1
         PhipsData.DropletFlag(i) = NaN; %erase those particles from Drop and Ice, but they still appear in Total
         num_sat = num_sat + 1;
     end
     
-    if sum(PhipsArray(i, end-16:end) <= 5) >= bg_tresh && ignore_below_background == 1
+    if sum(PhipsArray(i, :) <= 5) >= bg_tresh && ignore_below_background == 1
         PhipsData.DropletFlag(i) = NaN; %erase those particles from Drop and Ice, but they still appear in Total
         num_BG = num_BG + 1;
     end
@@ -175,7 +201,7 @@ disp([num2str(num_sat), ' particles above saturation without image size were rem
 
 %% B.1. Generate histograms
 % % B.1.a generate time axis
-if nargin == 9 %careful when debugging this step by step: nargin command does only work if used as function
+if nargin == 11 %careful when debugging this step by step: nargin command does only work if used as function
     start_time = start_time + datenum(0,0,0,0,0,tstep/2); %to compensate for the +/-tstep/2 in the next step
     end_time = end_time - datenum(0,0,0,0,0,tstep/2);
     taxis = [start_time - datenum(0,0,0,0,0,tstep/2):datenum(0,0,0,0,0,tstep):end_time+datenum(0,0,0,0,0,tstep/2)];
@@ -186,7 +212,6 @@ else %if no start/end time is given in the input of the function
 end
         
 % % B.1.b Shattering correction based on interarrivaltime
-thresh_interarrivaltime = 0.5/1000; % = 0.5 ms
 [PhipsData] = PHIPS_remove_shattered(PhipsData,thresh_interarrivaltime);
 
 % % Calculate Shattering Flag
@@ -228,6 +253,13 @@ disp('... for droplets...')
 % Droplet histogram based on imaged size
 [particles_per_bin_drop_v1, conc_drop_v1, ~, ~] = generate_histogram(PhipsData(PhipsData.DropletFlag_image==1,:),...
     PhipsData_level_0, taxis,tstep,bin_endpoints,A_sens_parameters_ice,airspeed,time);
+% Ice histogram ONLY FOR IMAGED PARTICLES
+if ~exist("SDice_only_images")
+    PhipsData = PhipsData(PhipsData.Shattering==0 & PhipsData.Multiple==0,:);
+    [particles_per_bin_ice_only_images, conc_ice_only_images, dA_only_images, dm_only_images] = generate_histogram(PhipsData(PhipsData.Droplet==0,:),...
+        PhipsData_level_0, taxis,tstep,bin_endpoints,A_sens_parameters_ice,airspeed,time);
+end
+
 
         
 %% C.1 Produce PHIPS_counts SD
@@ -240,7 +272,11 @@ SDdroplet_counts = [0 0 0 bin_midpoints;...
     taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag.*0+1 sum(particles_per_bin_drop,2) particles_per_bin_drop]; % SF for droplet is always 1
 SDdroplet_counts_v1 = [0 0 0 bin_midpoints;...
     taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag.*0+1 sum(particles_per_bin_drop_v1,2) particles_per_bin_drop_v1]; % SF for droplet is always 1
-        
+if ~exist("SDice_only_images")
+SDice_counts_only_images = [0 0 0 bin_midpoints;...
+    taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag sum(particles_per_bin_ice_only_images,2) particles_per_bin_ice_only_images];
+end        
+
 % % estimate uncertainty (FOR THE FIRST BIN - THIS NEEDS TO BE DONE!)
 % ice
 dN_minus =  [NaN -24.9479  -24.0072  -18.7372  -17.7478  -14.5033  -11.3761   -7.8475   -8.1237   -5.9329   -5.2310   -3.8175];
@@ -255,6 +291,10 @@ dN_drop(end-1:end) = dN_drop(end-2); % set the last 2 bins, which don't have eno
 % Total concentration
 Ntot_ice = 1000.*nansum(conc_ice,2); % [L^-1]
 Ntot_ice_v1 = 1000.*nansum(conc_ice_v1,2); % [L^-1]
+if ~exist("SDice_only_images")
+    Ntot_ice_only_images = 1000.*nansum(conc_ice_only_images,2); % [L^-1]
+    Ntot_ice_area_only_images = 1000.*nansum(dA_only_images,2); % [um2 L^-1]
+end
 Ntot_ice_area = 1000.*nansum(dA,2); % [um2 L^-1]
 Ntot_ice_mass = 1000.*nansum(dm,2); % [mg L^-1]
 Ntot_droplet =   1000.*nansum(conc_drop,2);
@@ -262,23 +302,10 @@ Ntot_droplet_v1 =   1000.*nansum(conc_drop_v1,2);
 
 Ntot_err_ice = 1000.*nansum(conc_ice.*dN_ice./100,2); % [L^-1]   
 Ntot_err_ice_v1 = 1000.*nansum(conc_ice_v1.*dN_ice./100,2); % [L^-1]  
+Ntot_err_ice_only_images = 1000.*nansum(conc_ice_only_images.*dN_ice./100,2); % [L^-1]  
 Ntot_err_droplet = 1000.*nansum(conc_drop.*dN_drop./100,2);
 Ntot_err_droplet_v1 = 1000.*nansum(conc_drop_v1.*dN_drop./100,2);
 
-% % Calculate extinction coefficient
-b_ext = 2.*nansum(dA,2) .* 1e-18 ./ 1e-15; % 1/km
-
-% % Calculate IWC
-iwc = nansum(dm,2); % mg / cm3
-iwc = 1e-3./1e-6.*iwc; % g/m3
-
-% % Calculate effective radius
-rho = 0.91; % density of ice in g cm-3
-rho = rho.*1e6; % density of ice in g m-3
-b_ext_temp = b_ext .* 1e-3; % m-1
-reff = 3/2 .* iwc ./ rho ./ b_ext_temp; % [g m-3 / (g m-3) / m-1 -> m]
-reff = reff .* 1e6; % um
-                
 % dNdlogDp
 dNdlogDp_ice = zeros(size(conc_ice));
 for i=1:size(conc_ice(:,1),1)
@@ -288,9 +315,21 @@ dNdlogDp_ice_v1 = zeros(size(conc_ice_v1));
 for i=1:size(conc_ice_v1(:,1),1)
     dNdlogDp_ice_v1(i,:) = 1000.*(conc_ice_v1(i,:)./dlogDp);
 end
+if ~exist("SDice_only_images")
+    dNdlogDp_ice_only_images = zeros(size(conc_ice_only_images));
+    for i=1:size(conc_ice_only_images(:,1),1)
+        dNdlogDp_ice_only_images(i,:) = 1000.*(conc_ice_only_images(i,:)./dlogDp);
+    end
+end
 dAdlogDp_ice = zeros(size(dA));
 for i=1:size(dA(:,1),1)
     dAdlogDp_ice(i,:) = 1000.*(dA(i,:)./dlogDp);
+end
+if ~exist("SDice_only_images")
+    dAdlogDp_ice_only_images = zeros(size(dA_only_images));
+    for i=1:size(dA_only_images(:,1),1)
+        dAdlogDp_ice_only_images(i,:) = 1000.*(dA_only_images(i,:)./dlogDp);
+    end
 end
 dmdlogDp_ice = zeros(size(dm));
 for i=1:size(dm(:,1),1)
@@ -308,6 +347,7 @@ end
 
        
 % % Make SD files
+only_images = 0;
 SDice = [0 0 0 0 bin_midpoints;...
     taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag Ntot_ice Ntot_err_ice dNdlogDp_ice];
 SDdroplet = [0 0 0 0 bin_midpoints;...
@@ -320,9 +360,13 @@ SDice_area = [0 0 0 0 bin_midpoints;...
     taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag Ntot_ice_area Ntot_err_ice_v1.*NaN dAdlogDp_ice]; % Error estimation not yet performed
 SDice_mass = [0 0 0 0 bin_midpoints;...
     taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag Ntot_ice_mass Ntot_err_ice_v1.*NaN dmdlogDp_ice]; % Error estimation not yet performed
-Bext = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) b_ext];
-IWC = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) iwc];
-Reff = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) reff];
+if ~exist("SDice_only_images")
+    SDice_only_images = [0 0 0 0 bin_midpoints;...
+    taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag Ntot_ice_only_images Ntot_err_ice_only_images dNdlogDp_ice_only_images];
+    SDice_area_only_images = [0 0 0 0 bin_midpoints;...
+    taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) ShatteringFlag Ntot_ice_area_only_images Ntot_err_ice_only_images.*NaN dAdlogDp_ice_only_images]; % Error estimation not yet performed
+    only_images = 1;
+end
             
 % % check how many segments are SF = 0
 idx = find(SDice(:, 3) > 0); % Ntot > 0
@@ -332,22 +376,88 @@ SF1 = length(find(SDice(idx,2) == 1));
 disp([num2str(SF0), ' segments are SF=0, ', num2str(SF1), ' are SF = 1, that means that ', num2str(SF0/(SF0+SF1)*100), '% are rejected)'])
         
 
-%% D) Save SD
-disp('save...')
-save_SD(SDice, SDice_counts, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
-save_SD(SDice_v1, SDice_counts_v1, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
-save_SD(SDdroplet, SDdroplet_counts, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
-save_SD(SDdroplet_v1, SDdroplet_counts_v1, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
-save_SD(SDice_area, SDice_counts_v1, save_status, savepath, campaign, flight, tstep, a_ice_area, b_ice_area, bin_endpoints);
+%% D) Calculate extinction coefficient, IWC, Reff, Rm
+b_ext = 2.*nansum(dA,2) .* 1e-18 ./ 1e-15; % 1/km
+if only_images == 1
+    b_ext_only_images = 2.*nansum(dA_only_images,2) .* 1e-18 ./ 1e-15; % 1/km
+end
 
+% Calculate IWC
+iwc = nansum(dm,2); % mg / cm3
+iwc = 1e-3./1e-6.*iwc; % g / m3
+if only_images == 1
+    iwc_only_images = nansum(dm_only_images,2); % mg / cm3
+    iwc_only_images = 1e-3./1e-6.*iwc_only_images; % g / m3
+end
+
+% Calculate effective radius
+rho = 0.917; % density of ice in g cm-3
+rho = rho.*1e6; % density of ice in g m-3
+b_ext_temp = b_ext .* 1e-3; % m-1
+reff = 3/2 .* iwc ./ rho ./ b_ext_temp; % [g m-3 / (g m-3) / m-1 -> m]
+reff = reff .* 1e6; % um
+% For only images
+if only_images == 1
+    b_ext_temp = b_ext_only_images .* 1e-3; % m-1
+    reff_only_images = 3/2 .* iwc_only_images ./ rho ./ b_ext_temp; % [g m-3 / (g m-3) / m-1 -> m]
+    reff_only_images = reff_only_images .* 1e6; % um
+end
+
+% Calculate mass-equivalent spherical radius
+rho_ice = 917;               % Density of ice in kg/m³
+iwc_kg = iwc    .* 1e-3; % Convert g/m³ to kg/m³
+N = Ntot_ice_v1 .* 1e3;  % Convert L⁻¹ to m⁻³
+% Initialize r_m with NaN
+r_m = NaN(size(iwc_kg));
+% Find valid indices where IWC > 0 and N > 0 to avoid division errors
+valid_indices = (iwc_kg > 0) & (N > 0);
+% Compute mean ice crystal radius
+r_m(valid_indices) = (3 * iwc_kg(valid_indices) ./ (4 * pi * N(valid_indices) * rho_ice)).^(1/3);
+
+% Calculate mass-equivalent spherical radius, for only imaged particles
+if only_images == 1
+    iwc_kg = iwc_only_images    .* 1e-3; % Convert g/m³ to kg/m³
+    N = Ntot_ice_only_images    .* 1e3;  % Convert L⁻¹ to m⁻³
+    % Initialize r_m with NaN
+    r_m_only_images = NaN(size(iwc_kg));
+    % Find valid indices where IWC > 0 and N > 0 to avoid division errors
+    valid_indices = (iwc_kg > 0) & (N > 0);
+    % Compute mean ice crystal radius
+    r_m_only_images(valid_indices) = (3 * iwc_kg(valid_indices) ./ (4 * pi * N(valid_indices) * rho_ice)).^(1/3);
+end
+
+Bext = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) b_ext];
+IWC = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) iwc];
+Reff = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) reff];
+Rm = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) r_m.*1e6]; % in micron
+if only_images == 1
+    Reff_only_images = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) reff_only_images];
+    Rm_only_images = [taxis(1:end-1)'+datenum(0,0,0,0,0,tstep/2) r_m_only_images.*1e6]; % in micron
+end
+
+
+%% E) Save SD
 if save_status == 1
+disp('save...')
+    save_SD(SDice, SDice_counts, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
+    save_SD(SDice_v1, SDice_counts_v1, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
+    save_SD(SDdroplet, SDdroplet_counts, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
+    save_SD(SDdroplet_v1, SDdroplet_counts_v1, save_status, savepath, campaign, flight, tstep, a_droplet, b_droplet, bin_endpoints);
+    save_SD(SDice_area, SDice_counts_v1, save_status, savepath, campaign, flight, tstep, a_ice_area, b_ice_area, bin_endpoints);
+    
+    save_SD(SDice_only_images, SDice_counts_only_images, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
+    save_SD(SDice_area_only_images, SDice_counts_only_images, save_status, savepath, campaign, flight, tstep, a_ice, b_ice, bin_endpoints);
+
     save([savepath,'Bext_',num2str(tstep),'s.txt'],'Bext','-ascii','-double')
     save([savepath,'IWC_',num2str(tstep),'s.txt'],'IWC','-ascii','-double')
     save([savepath,'Reff_',num2str(tstep),'s.txt'],'Reff','-ascii','-double')
-end
+    save([savepath,'Reff_only_images_',num2str(tstep),'s.txt'],'Reff_only_images','-ascii','-double')
+    save([savepath,'Rm_',num2str(tstep),'s.txt'],'Reff','-ascii','-double')
+    save([savepath,'Rm_only_images_',num2str(tstep),'s.txt'],'Rm_only_images','-ascii','-double')
 
-% save SD as .nc file
-% translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
+    % save SD as .nc file
+    % translate_SD_sum_to_nc(savepath, campaign, flight, tstep);
+end
 disp('..all done.')
 
 end
@@ -356,27 +466,35 @@ end
 %% FUNCTIONS 
 
 %% Get Airspeed
-function [time,airspeed] = get_airspeed(campaign,flight,particleopticspath)
+function [time,airspeed] = get_airspeed(campaign,flight,Aircraft_data_folder)
     if strcmp(campaign,'ACLOUD')
-        Aircraft_data_folder = [particleopticspath, '/SID3/ACLOUD/Flight data/'];
+        %Aircraft_data_folder = [particleopticspath, '/SID3/ACLOUD/Flight data/'];
         flight_date = strsplit(flight, ' ');
         flight_date = flight_date{2};
         Aircraft_data_filename = ['AircraftData_', flight_date, '.dat'];
+        [time,airspeed,~,~,~,~,~,~] = Aircraft_data(campaign,Aircraft_data_folder,Aircraft_data_filename);
+ 
     elseif strcmp(campaign,'SOCRATES')
-        Aircraft_data_folder = [particleopticspath,'/Phips/SOCRATES/Flight data/'];
+        %Aircraft_data_folder = [particleopticspath,'/Phips/SOCRATES/Flight data/'];
         Aircraft_data_filename = ['SOCRATES',lower(flight),'.nc'];
+        [time,airspeed,~,~,~,~,~,~] = Aircraft_data(campaign,Aircraft_data_folder,Aircraft_data_filename);
+ 
     elseif strcmp(campaign,'CIRRUS-HL')
-        Aircraft_data_folder = [particleopticspath,filesep,'Phips',filesep,'CIRRUS-HL',filesep,'Flight data',filesep];
+        %Aircraft_data_folder = [particleopticspath,filesep,'Phips',filesep,'CIRRUS-HL',filesep,'Flight data',filesep];
         flightnum = strsplit(flight,'RF');
         flightnum = flightnum{2};
-        listings = dir([Aircraft_data_folder, 'CIRRUSHL_F', flightnum, '_*_BAHAMAS_v1.nc']);
+        listings = dir([Aircraft_data_folder, '*CIRRUSHL_F', flightnum, '_*_BAHAMAS_v1.nc']);
         Aircraft_data_filename = listings(end).name;
+
+        % Read TIME and TAS variable from the netCDF file
+        time_seconds = ncread([Aircraft_data_folder,Aircraft_data_filename], 'TIME');
+        time = datenum(datetime(time_seconds, 'ConvertFrom', 'posixtime', 'TimeZone', 'UTC')); % Convert seconds since 1970-01-01 00:00:00 UTC to datetime
+        airspeed = ncread([Aircraft_data_folder,Aircraft_data_filename], 'TAS');
     else
-        disp('Configure Flight Data path first!')
+        disp('Configure flight data path or data name first!')
         return
     end
-    [time,airspeed,~,~,~,~,~,~] = Aircraft_data(campaign,Aircraft_data_folder,Aircraft_data_filename);
- 
+    
 end
 
 %% Get image size

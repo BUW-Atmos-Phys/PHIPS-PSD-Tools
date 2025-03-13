@@ -41,6 +41,8 @@ if strcmp(campaign,'ACLOUD')
         ShatteringFlag(ind) = 0;
         quality_string = 'Quality flag between 16:12:30 and 17:20:00 UTC was manually set to 0 (shattering influenced period).';
     end
+elseif strcmp(campaign,'CIRRUS-HL')
+    quality_string = 'During CIRRUS-HL noise triggers were observed outside clouds. Noise triggers were removed based on the shape of their light scattering function using a correlation-based pattern matching approach, where known noise patterns from RF03 particles #8–26 were used to compute cosine similarity scores for each row in the dataset, and rows exceeding a predefined threshold were identified as noise and removed.';
 end
 
 end

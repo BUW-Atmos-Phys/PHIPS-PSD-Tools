@@ -1,11 +1,14 @@
-function [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_drop, N_ice, N_drop, N_ice_uncertainty, N_drop_uncertainty, counts_ice, counts_drop, ...
+function [time_PHIPS, ShatteringFlag, SD_PHIPS_ice, SD_PHIPS_ice_only_images, SD_PHIPS_drop, ...
+    N_ice, N_ice_only_images, N_drop, ...
+    N_ice_uncertainty, N_ice_uncertainty_only_images, N_drop_uncertainty, ...
+    counts_ice, counts_ice_only_images, counts_drop, ...
     bin_endpoints_PHIPS, bin_midpoints_PHIPS,bin_midpoints_area_PHIPS, ...
-    SD_PHIPS_ice_area,A_ice] = Read_PHIPS_SD(savepath, tstep)
+    SD_PHIPS_ice_area, SD_PHIPS_ice_area_only_images,A_ice] = Read_PHIPS_SD(savepath, tstep)
 
 
 %% Load PHIPS PSD - Number
 cd(savepath)
-listings = dir(['*', num2str(tstep), 's_droplet_v1.sum']); % PSDs based on images
+listings = dir(['*', num2str(tstep), 's_droplet_v1.sum']); % PSDs based on images + scattering
 if isempty(listings)
     disp('No SD found!')
     return 
@@ -14,10 +17,15 @@ filename = listings(end).name;
 filename = [savepath,filesep,filename];
 SD_drop_raw = dlmread(filename);
 
-listings = dir(['*', num2str(tstep), 's_ice_v1.sum']); % PSDs based on images
+listings = dir(['*', num2str(tstep), 's_ice_v1.sum']); % PSDs based on images + scattering
 filename = listings(end).name;
 filename = [savepath,filesep,filename];
 SD_ice_raw = dlmread(filename);
+
+listings = dir(['*', num2str(tstep), 's_ice_only_images.sum']); % PSDs based on ONLY images (no shattering)
+filename = listings(end).name;
+filename = [savepath,filesep,filename];
+SD_ice_raw_only_images = dlmread(filename);
 
 %% Load PHIPS PSD - Area
 listings = dir(['*', num2str(tstep), 's_ice_area.sum']); % PSDs based on images
@@ -28,6 +36,15 @@ end
 filename = listings(end).name;
 filename = [savepath,filesep,filename];
 SD_ice_area_raw = dlmread(filename);
+
+listings = dir(['*', num2str(tstep), 's_ice_area_only_images.sum']); % PSDs based on ONLY images (no shattering)
+if isempty(listings)
+    disp('No SD found!')
+    return 
+end
+filename = listings(end).name;
+filename = [savepath,filesep,filename];
+SD_ice_area_raw_only_images = dlmread(filename);
 
 
 %%
@@ -47,10 +64,15 @@ N_drop_uncertainty = SD_drop_raw(2:end,4);
 SD_PHIPS_ice = SD_ice_raw(2:end,5:end);
 N_ice = SD_ice_raw(2:end,3);
 N_ice_uncertainty = SD_ice_raw(2:end,4);
+SD_PHIPS_ice_only_images = SD_ice_raw_only_images(2:end,5:end);
+N_ice_only_images = SD_ice_raw_only_images(2:end,3);
+N_ice_uncertainty_only_images = SD_ice_raw_only_images(2:end,4);
 
 % PSD area 
 SD_PHIPS_ice_area = SD_ice_area_raw(2:end,5:end);
 A_ice = SD_ice_area_raw(2:end,3); % total area [um2 L-1]
+SD_PHIPS_ice_area_only_images = SD_ice_area_raw_only_images(2:end,5:end);
+A_ice_only_images = SD_ice_area_raw_only_images(2:end,3); % total area [um2 L-1]
 
 
 %% consistency check: diameter
@@ -88,8 +110,14 @@ filename = listings(end).name;
 filename = [savepath,filesep,filename];
 counts_ice_raw = readmatrix(filename,'FileType','text');
 
+listings = dir(['*', num2str(tstep), 's_ice_only_images_counts.sum']); 
+filename = listings(end).name;
+filename = [savepath,filesep,filename];
+counts_ice_raw_only_images = readmatrix(filename,'FileType','text');
+
 counts_drop = counts_drop_raw(2:end,4:end);
 counts_ice = counts_ice_raw(2:end,4:end);
+counts_ice_only_images = counts_ice_raw_only_images(2:end,4:end);
 
 end
 
